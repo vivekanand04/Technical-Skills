@@ -1,0 +1,2 @@
+1) ctrl+shift+r   -> bypass the cache (not lacolstorage/session storage)..its doesn't not delete any of three.
+2)

@@ -1,0 +1,16 @@
+cd ~
+mkdir -p agent
+cp -a "/mnt/c/Users/Lenovo/Desktop/rcm_v2 medical_rbac final" ~/agent/rcm_v2
+cd ~/agent/rcm_v2
+
+
+
+
+cd ~
+mkdir -p agent
+cp -a "/mnt/c/Users/Lenovo/Desktop/Voice-Agents-Web" ~/agent/Voice-Agents-Web
+cd ~/agent/Voice-Agents-Web
+
+
+
+

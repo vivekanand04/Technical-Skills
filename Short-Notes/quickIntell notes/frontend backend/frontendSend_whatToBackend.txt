@@ -1,0 +1,440 @@
+I'll help you understand the complete flow of how the frontend sends requests and how the backend extracts the user to perform RBAC authorization. Let me read the relevant files to provide a comprehensive step-by-step workflow.
+
+[5 tools called]
+
+# Step-by-Step RBAC Workflow: Frontend to Backend Authorization
+
+Based on your implemented RBAC system using CASL-Prisma, here's the complete workflow showing what the frontend sends and how the backend extracts the user to perform authorization.
+
+## Overview
+
+**Key Point:** The frontend does NOT need to explicitly send user information. Wasp's authentication system automatically handles this through HTTP session/JWT tokens.
+
+---
+
+## Step-by-Step Workflow
+
+### **Step 1: User Authentication (Initial Login)**
+
+**Files Involved:**
+- `src/auth/LoginPage.tsx` (frontend)
+- Wasp's built-in auth system (handled automatically)
+
+**What Happens:**
+1. User logs in via email/password through your login form
+2. Wasp automatically creates a session/JWT token
+3. This token is stored in the browser (httpOnly cookie)
+4. All subsequent requests automatically include this token in HTTP headers
+
+**Frontend Code Example:**
+```4:88:src/rcm/organization/UsersPage.tsx
+import { useQuery } from 'wasp/client/operations';
+import { useAuth } from 'wasp/client/auth';
+import { getOrganizationMembers, getUserOrganizations, inviteMember, updateMemberRole, removeMember } from 'wasp/client/operations';
+```
+
+The `useAuth()` hook provides the current logged-in user on the frontend.
+
+---
+
+### **Step 2: Frontend Calls a Wasp Operation**
+
+**Files Involved:**
+- `src/rcm/organization/UsersPage.tsx` (frontend calling operations)
+- `main.wasp` (operation definitions)
+
+**What Frontend Sends:**
+
+```typescript
+// Example: Frontend calling an operation
+const { data: members } = useQuery(
+  getOrganizationMembers,
+  { organizationId: currentOrg.id }  // ← ONLY sends organizationId
+);
+```
+
+**Important:** The frontend **ONLY** sends:
+- Operation-specific data (e.g., `organizationId`, query filters)
+- **NO user ID or authentication tokens manually** - Wasp handles this automatically
+
+**Wasp Configuration (main.wasp):**
+
+```269:273:main.wasp
+query getOrganizationMembers {
+  fn: import { getOrganizationMembers } from "@src/rcm/eob2era/operations",
+  entities: [OrganizationMember, User]
+}
+```
+
+---
+
+### **Step 3: Backend Receives Request & Extracts User**
+
+**Files Involved:**
+- `src/rcm/organization/operations.ts` (backend operation implementation)
+
+**How Backend Extracts User:**
+
+```57:78:src/rcm/organization/operations.ts
+export const getOrganizationMembers: GetOrganizationMembers<{ organizationId: string }, OrganizationMember[]> = async (args, context) => {
+  if (!context.user) {
+    throw new HttpError(401, 'Not authorized');
+  }
+
+  // Check if user has access to this organization
+  const membership = await context.entities.OrganizationMember.findFirst({
+    where: { 
+      userId: context.user.id,
+      organizationId: args.organizationId 
+    }
+  });
+
+  if (!membership) {
+    throw new HttpError(404, 'Organization not found or access denied');
+  }
+
+  return context.entities.OrganizationMember.findMany({
+    where: { organizationId: args.organizationId },
+    include: { user: true }
+  });
+}
+```
+
+**Breakdown:**
+1. **`context.user`** - Wasp automatically extracts the logged-in user from the JWT/session token and provides it in `context.user`
+2. **`context.user.id`** - The user's unique ID from the database
+3. **`args.organizationId`** - The organization ID sent from the frontend
+4. The backend queries `OrganizationMember` to find the user's membership
+
+---
+
+### **Step 4: Backend Builds CASL Ability**
+
+**Files Involved:**
+- `src/rcm/auth/ability.ts` (CASL ability builder)
+- `schema.prisma` (permission definitions)
+
+**How Backend Determines Permissions:**
+
+```16:65:src/rcm/auth/ability.ts
+export async function buildAbilityFor(userId: string, organizationId: string, context: any): Promise<AppAbility> {
+  const { can, build } = new AbilityBuilder<AppAbility>(createPrismaAbility as any)
+
+  const membership = await context.entities.OrganizationMember.findFirst({
+    where: { userId, organizationId }
+  })
+
+  if (!membership) {
+    // No access to anything if not a member
+    return build()
+  }
+
+  // Owners: full implicit permissions across tasks within the organization
+  if (membership.role === 'owner') {
+    can('manage', 'Eob2EraRecord', { organizationId })
+    can('manage', 'OrganizationMember', { organizationId })
+    can('update', 'Organization', { id: organizationId })
+    can('read', 'Organization', { id: organizationId })
+  }
+
+  // Note: Non-owner roles carry no implicit permissions; all access below is controlled by fine-grained permissions.
+
+  // Fine-grained permissions
+  if (membership.recordPermission === PermissionLevel.READ || membership.recordPermission === PermissionLevel.WRITE) {
+    can('read', 'Eob2EraRecord', { organizationId })
+  }
+  if (membership.recordPermission === PermissionLevel.WRITE) {
+    can('update', 'Eob2EraRecord', { organizationId })
+    can('delete', 'Eob2EraRecord', { organizationId })
+  }
+  if (membership.uploadRecordPermission === PermissionLevel.WRITE) {
+    can('create', 'Eob2EraRecord', { organizationId })
+  }
+  if (membership.manageUserPermission === PermissionLevel.READ || membership.manageUserPermission === PermissionLevel.WRITE) {
+    can('read', 'OrganizationMember', { organizationId })
+  }
+  if (membership.manageUserPermission === PermissionLevel.WRITE) {
+    can('create', 'OrganizationMember', { organizationId })
+    can('update', 'OrganizationMember', { organizationId })
+    can('delete', 'OrganizationMember', { organizationId })
+  }
+  if (membership.organizationDetailsPermission === PermissionLevel.READ || membership.organizationDetailsPermission === PermissionLevel.WRITE) {
+    can('read', 'Organization', { id: organizationId })
+  }
+  if (membership.organizationDetailsPermission === PermissionLevel.WRITE) {
+    can('update', 'Organization', { id: organizationId })
+  }
+
+  return build()
+}
+```
+
+**Permission Fields (from schema.prisma):**
+
+```145:166:schema.prisma
+model OrganizationMember {
+  id                        String          @id @default(uuid())
+  role                      String          // 'owner', 'admin', 'member', 'viewer'
+  
+  // Fine-grained permissions (RBAC)
+  recordPermission          PermissionLevel @default(NONE)
+  uploadRecordPermission    PermissionLevel @default(NONE)
+  manageUserPermission      PermissionLevel @default(NONE)
+  organizationDetailsPermission PermissionLevel @default(NONE)
+  // ...
+}
+```
+
+---
+
+### **Step 5: Backend Enforces Authorization**
+
+**Files Involved:**
+- `src/rcm/organization/operations.ts`
+- `src/rcm/eob2era/operations.ts`
+
+**Example 1: Inviting a Member (Write Permission Required)**
+
+```160:203:src/rcm/organization/operations.ts
+export const inviteMember: InviteMember<{ organizationId: string; email: string; role: string; permissions?: { record: PermissionLevel; uploadRecord: PermissionLevel; manageUser: PermissionLevel; organizationDetails: PermissionLevel } }, OrganizationMember> = async (args, context) => {
+  if (!context.user) {
+    throw new HttpError(401, 'Not authorized');
+  }
+
+  // Enforce via CASL ability: must be allowed to create OrganizationMember
+  const ability = await buildAbilityFor(context.user.id, args.organizationId, context)
+  if (!ability.can('create', 'OrganizationMember')) {
+    throw new HttpError(403, 'Insufficient permissions');
+  }
+
+  // Find user by email
+  const user = await context.entities.User.findFirst({
+    where: { email: args.email }
+  });
+
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
+
+  // Check if user is already a member
+  const existingMembership = await context.entities.OrganizationMember.findFirst({
+    where: {
+      userId: user.id,
+      organizationId: args.organizationId
+    }
+  });
+
+  if (existingMembership) {
+    throw new HttpError(400, 'User is already a member of this organization');
+  }
+
+  return context.entities.OrganizationMember.create({
+    data: {
+      userId: user.id,
+      organizationId: args.organizationId,
+      role: args.role as any,
+      recordPermission: args.permissions?.record ?? PermissionLevel.NONE,
+      uploadRecordPermission: args.permissions?.uploadRecord ?? PermissionLevel.NONE,
+      manageUserPermission: args.permissions?.manageUser ?? PermissionLevel.NONE,
+      organizationDetailsPermission: args.permissions?.organizationDetails ?? PermissionLevel.NONE
+    }
+  });
+}
+```
+
+**Example 2: Reading EOB Records**
+
+```81:160:src/rcm/eob2era/operations.ts
+export const getEobRecords: GetEobRecords<GetEobRecordsArgs, { records: Eob2EraRecord[]; total: number; page: number; pageSize: number }> = async (args, context) => {
+  if (!context.user) {
+    throw new HttpError(401, 'You must be logged in to view records');
+  }
+
+  // Get user's organization
+  const organization = await getUserOrganization(context.user.id, context);
+
+  // Ability check: must be allowed to read records
+  const ability = await buildAbilityFor(context.user.id, organization.id, context)
+  if (!ability.can('read', 'Eob2EraRecord')) {
+    throw new HttpError(403, 'You do not have permission to view records');
+  }
+
+  // Build where clause
+  const where: any = {
+    organizationId: organization.id,
+    ...accessibleBy(ability).Eob2EraRecord,
+  };
+
+  if (args.status) {
+    where.status = args.status;
+  }
+
+  if (args.payer) {
+    where.payer = { contains: args.payer, mode: 'insensitive' };
+  }
+
+  if (args.facility) {
+    where.facility = { contains: args.facility, mode: 'insensitive' };
+  }
+
+  if (args.searchTerm) {
+    where.OR = [
+      { eob: { contains: args.searchTerm, mode: 'insensitive' } },
+      { payer: { contains: args.searchTerm, mode: 'insensitive' } },
+      { facility: { contains: args.searchTerm, mode: 'insensitive' } },
+      { era: { contains: args.searchTerm, mode: 'insensitive' } },
+    ];
+  }
+
+  if (args.startDate || args.endDate) {
+    where.received = {};
+    if (args.startDate) {
+      where.received.gte = new Date(args.startDate);
+    }
+    if (args.endDate) {
+      where.received.lte = new Date(args.endDate);
+    }
+  }
+
+  // Pagination
+  const page = args.page || 1;
+  const pageSize = args.pageSize || 20;
+  const skip = (page - 1) * pageSize;
+
+  // Sorting
+  const orderBy: any = {};
+  const sortBy = args.sortBy || 'createdAt';
+  const sortOrder = args.sortOrder || 'desc';
+  orderBy[sortBy] = sortOrder;
+
+  // Fetch records
+  const [records, total] = await Promise.all([
+    context.entities.Eob2EraRecord.findMany({
+      where,
+      orderBy,
+      skip,
+      take: pageSize,
+    }),
+    context.entities.Eob2EraRecord.count({ where }),
+  ]);
+
+  return {
+    records,
+    total,
+    page,
+    pageSize,
+  };
+};
+```
+
+**Note:** The `accessibleBy(ability).Eob2EraRecord` generates Prisma conditions based on CASL rules.
+
+---
+
+## Complete Request Flow Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React Component)                    │
+│                                                                  │
+│  1. User is authenticated (Wasp useAuth hook)                   │
+│  2. Component calls operation with only business data           │
+│     Example: getOrganizationMembers({ organizationId })         │
+│  3. HTTP request sent with JWT token in cookie (automatic)     │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  WASP FRAMEWORK (Middleware)                     │
+│                                                                  │
+│  4. Intercepts HTTP request                                     │
+│  5. Validates JWT token from cookie                             │
+│  6. Extracts user info from token                               │
+│  7. Provides context.user to operation handler                  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              BACKEND (Operation Handler - operations.ts)         │
+│                                                                  │
+│  8. Checks if context.user exists (401 if not)                  │
+│  9. Extracts context.user.id                                    │
+│ 10. Queries OrganizationMember with:                            │
+│     - userId = context.user.id                                  │
+│     - organizationId = args.organizationId                      │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              CASL ABILITY BUILDER (ability.ts)                   │
+│                                                                  │
+│ 11. Receives userId + organizationId                            │
+│ 12. Fetches OrganizationMember from DB                          │
+│ 13. Reads role and permission fields:                           │
+│     - role (owner/admin/member/viewer)                          │
+│     - recordPermission (NONE/READ/WRITE)                        │
+│     - uploadRecordPermission (NONE/READ/WRITE)                  │
+│     - manageUserPermission (NONE/READ/WRITE)                    │
+│     - organizationDetailsPermission (NONE/READ/WRITE)           │
+│ 14. Builds CASL ability with can() rules                        │
+│ 15. Returns AppAbility object                                   │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            AUTHORIZATION CHECK (operations.ts)                   │
+│                                                                  │
+│ 16. Checks ability.can('action', 'Subject')                     │
+│     Examples:                                                    │
+│     - ability.can('read', 'Eob2EraRecord')                      │
+│     - ability.can('create', 'OrganizationMember')               │
+│ 17. If authorized: Execute operation                            │
+│ 18. If NOT authorized: Throw HttpError(403)                     │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  DATABASE QUERY (Prisma)                         │
+│                                                                  │
+│ 19. Uses accessibleBy(ability) for row-level filtering          │
+│ 20. Returns only data user can access                           │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    RESPONSE TO FRONTEND                          │
+│                                                                  │
+│ 21. Returns data or error to frontend                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Integration with Other Work Domains (Medical Coding, Payments)
+
+For other domains, follow the same pattern:
+
+1. **Add permission fields to `OrganizationMember`** for the new domain:
+   ```prisma
+   model OrganizationMember {
+     // ... existing fields ...
+     medicalCodingPermission   PermissionLevel @default(NONE)
+     paymentsPermission        PermissionLevel @default(NONE)
+   }
+   ```
+
+2. **Update `ability.ts`** to include the new permissions:
+   ```typescript
+   if (membership.medicalCodingPermission === PermissionLevel.READ || ...) {
+     can('read', 'MedicalCode', { organizationId })
+   }
+   if (membership.paymentsPermission === PermissionLevel.WRITE) {
+     can('create', 'Payment', { organizationId })
+   }
+   ```
+
+3. **Create operations** for the new domain in a new operations file
+
+4. **Use the same authorization pattern** in those operations
+
+This approach ensures consistent, secure authorization across all domains in your application!

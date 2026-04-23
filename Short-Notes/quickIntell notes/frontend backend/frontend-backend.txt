@@ -1,0 +1,49 @@
+# RBAC Frontend↔Backend Contract — Q&A Document
+
+## Scope
+
+- Summarize how permissions are computed (CASL+Prisma) from `OrganizationMember.role` and fine-grained permission fields.
+- Specify, per operation, the exact request shape the frontend must send so the backend can authorize and the DB can filter via CASL conditions.
+- Cover EOB/ERA records, organization membership management (invite/update/remove), org settings, and file access URLs.
+
+## Deliverables
+
+- Concise Q&A with step-by-step answers for:
+1) How the backend determines a user’s permissions for an organization
+2) What the frontend must send to read EOB records
+3) What to send to upload EOB and trigger processing
+4) What to send to update/delete EOB records
+5) What to send to view/download EOB/ERA files (signed URL)
+6) How to invite a member (with fine-grained permissions)
+7) How to update a member’s role and remove members
+8) How to read/update organization settings
+9) How the client can check its own effective permissions for UI gating
+10) How this pattern generalizes to other domains (medical coding, payments)
+
+## Source of Truth (files)
+
+- Prisma models: `schema.prisma` (enum `PermissionLevel`, `OrganizationMember` fields)
+- Ability builder: `src/rcm/auth/ability.ts`
+- EOB/ERA operations: `src/rcm/eob2era/operations.ts`
+- Organization operations: `src/rcm/organization/operations.ts`
+- Invite UI: `src/rcm/organization/UsersPage.tsx`
+- API: `src/rcm/server/api.ts` (signed URL)
+- Wasp config/ops wiring: `main.wasp`
+
+## Q&A Outline (high level)
+
+- Q1: How does the backend compute permissions? (role + fine-grained fields mapping to CASL actions)
+- Q2: To fetch EOB records, what must the frontend send? (filters only; org resolved via membership)
+- Q3: To upload EOB, what must be sent? (file meta, received date; org inferred; CASL `create`)
+- Q4: To update/delete EOB, what must be sent? (record id + fields)
+- Q5: To view/download files, what must be sent? (`s3Url`, `recordId`, optional `action`)
+- Q6: To invite a member, what must be sent? (`organizationId`, `email`, `role`, `permissions` object)
+- Q7: To change role/remove member, what must be sent? (`id`/`memberId`, new `role`)
+- Q8: To read/update org settings, what must be sent? (org id, settings fields)
+- Q9: How can frontend know what to show? (query members; find self; use permission fields)
+- Q10: How to apply this to other domains
+
+## Notes/Assumptions to Confirm
+
+- EOB listing currently uses the first organization membership implicitly; we’ll call this out as current behavior and note future explicit `organizationId` if needed.
+- Include small, targeted code references for traceability unless requested to exclude.

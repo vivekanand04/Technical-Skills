@@ -1,0 +1,48 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    multiset<int> st;
+
+    // insert
+    st.insert(10);
+    st.insert(10);
+    st.insert(20);
+    st.insert(30);
+
+    // access (all elements)
+    for(auto it = st.begin(); it != st.end(); it++){
+        cout << *it << " ";
+    }
+    cout << endl;
+
+    // access all values of a key
+    auto range = st.equal_range(10);
+    for(auto it = range.first; it != range.second; it++){
+        cout << *it << " ";
+    }
+    cout << endl;
+
+    // find (first occurrence)
+    auto it = st.find(10);
+    if(it != st.end()){
+        cout << "First occurrence of 10: " << *it << endl;
+    }
+
+    // erase by iterator (single element)
+    it = st.find(20);
+    if(it != st.end()){
+        st.erase(it);
+    }
+
+    // erase all occurrences of 10
+    st.erase(10);
+
+    // final multiset
+    cout << "After deletion:" << endl;
+    for(auto it = st.begin(); it != st.end(); it++){
+        cout << *it << " ";
+    }
+
+    return 0;
+}

@@ -1,0 +1,168 @@
+I'll scan for the RBAC "Invite User" flow and related casl/ability configuration across code, schema, and migrations, then compile the compact report.
+
+[6 tools called]
+
+I’m going to open the key files involved in the invite/RBAC flow (UI, operation, ability, schema, config, and the RBAC migration) to extract concise snippets and confirm created/modified status for the report.
+
+[10 tools called]
+
+I’m scanning the codebase for the “Invite User” RBAC flow, focusing on UI, operation, ability, schema, migrations, and config. I’ll compile a compact report with code snippets and any risks I find.
+
+### RBAC Invite Flow — Files: 3 Created / 4 Modified
+Top risk: Duplicate legacy invite implementation and hardcoded role strings may drift from CASL checks.
+
+### Control flow (UI → API → controller → service → DB → ability → middleware → response)
+1. Invite form submit
+   - File: `src/rcm/organization/UsersPage.tsx` — Modified — Frontend
+   - Sends `inviteMember` with email, role, permissions; disables UI based on membership.
+
+2. Wasp action routing
+   - File: `main.wasp` — Modified — Backend
+   - Maps client call `inviteMember` → server fn `@src/rcm/organization/operations`.
+
+3. Controller/Service entry
+   - File: `src/rcm/organization/operations.ts` — Modified — Backend
+   - Validates auth; builds CASL ability; enforces `can('create','OrganizationMember')`.
+
+4. Database write
+   - File: `src/rcm/organization/operations.ts` — Modified — Backend
+   - Creates `OrganizationMember` with fine-grained permissions.
+
+5. Ability resolution
+   - File: `src/rcm/auth/ability.ts` — Created — Backend
+   - Builds ability from role + `PermissionLevel` flags to allow create/update/delete on `OrganizationMember`.
+
+6. Middleware
+   - NOT FOUND: `src/server/middleware.ts` (no global CASL middleware; checks are inline in operations)
+
+7. Response to client
+   - File: `src/rcm/organization/operations.ts` — Modified — Backend
+   - Returns created membership; UI toasts and refetches.
+
+### Full ordered file list
+- src/rcm/organization/UsersPage.tsx — Modified — Frontend — Invite dialog + submit; permission-gated UI
+```80:87:src/rcm/organization/UsersPage.tsx
+  async function handleInvite() {
+    if (!currentOrg || !inviteEmail) return;
+    setIsSubmitting(true);
+    try {
+      const roleToSend = inviteCustomRole.trim();
+      await inviteMember({ organizationId: currentOrg.id, email: inviteEmail, role: roleToSend, permissions: invitePerms as any });
+```
+
+- main.wasp — Modified — Backend — Wasp action mapping for inviteMember
+```405:408:main.wasp
+action inviteMember {
+  fn: import { inviteMember } from "@src/rcm/organization/operations",
+  entities: [Organization, OrganizationMember, User]
+}
+```
+
+- src/rcm/organization/operations.ts — Modified — Backend — Enforce CASL and create membership with permissions
+```165:169:src/rcm/organization/operations.ts
+// Enforce via CASL ability: must be allowed to create OrganizationMember
+const ability = await buildAbilityFor(context.user.id, args.organizationId, context)
+if (!ability.can('create', 'OrganizationMember')) {
+  throw new HttpError(403, 'Insufficient permissions');
+}
+```
+
+- schema.prisma — Modified — DB — Adds `PermissionLevel` enum and permission fields on `OrganizationMember`
+```145:154:schema.prisma
+// Fine-grained permissions (RBAC)
+recordPermission          PermissionLevel @default(NONE)
+uploadRecordPermission    PermissionLevel @default(NONE)
+manageUserPermission      PermissionLevel @default(NONE)
+organizationDetailsPermission PermissionLevel @default(NONE)
+createdAt                 DateTime        @default(now())
+updatedAt                 DateTime        @updatedAt
+```
+
+- src/rcm/auth/ability.ts — Created — Backend — CASL Ability for org-level and fine-grained permissions
+```49:55:src/rcm/auth/ability.ts
+if (membership.manageUserPermission === PermissionLevel.WRITE) {
+  can('create', 'OrganizationMember', { organizationId })
+  can('update', 'OrganizationMember', { organizationId })
+  can('delete', 'OrganizationMember', { organizationId })
+}
+```
+
+- src/components/ui/dialog.tsx — Created — Frontend — Shadcn dialog used by Invite UI
+```109:116:src/components/ui/dialog.tsx
+export {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
+  DialogTrigger,
+  DialogContent,
+```
+
+- NOT FOUND — Middleware — Backend — No centralized CASL middleware detected
+  - NOT FOUND: `src/server/middleware.ts`
+
+### DB specifics
+- Modified models and fields (schema)
+```10:14:schema.prisma
+enum PermissionLevel {
+  NONE
+  READ
+  WRITE
+}
+```
+```169:181:schema.prisma
+model OrganizationRole {
+  id              String        @id @default(uuid())
+  name            String
+  createdAt       DateTime      @default(now())
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId  String
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+```
+- Migrations
+  - Created: migrations/20251024183241_rbac_tri_level_permission/migration.sql
+```10:19:migrations/20251024183241_rbac_tri_level_permission/migration.sql
+CREATE TYPE "PermissionLevel" AS ENUM ('NONE', 'READ', 'WRITE');
+ALTER TABLE "OrganizationMember" DROP COLUMN "canInviteUser",
+DROP COLUMN "canUploadRecord",
+DROP COLUMN "canViewRecords",
+ADD COLUMN "manageUserPermission" "PermissionLevel" NOT NULL DEFAULT 'NONE',
+ADD COLUMN "organizationDetailsPermission" "PermissionLevel" NOT NULL DEFAULT 'NONE',
+ADD COLUMN "recordPermission" "PermissionLevel" NOT NULL DEFAULT 'NONE',
+ADD COLUMN "uploadRecordPermission" "PermissionLevel" NOT NULL DEFAULT 'NONE';
+```
+  - Created: migrations/20251024135844_vivek_mig/migration.sql (legacy booleans replaced later)
+```1:4:migrations/20251024135844_vivek_mig/migration.sql
+ALTER TABLE "OrganizationMember" ADD COLUMN     "canInviteUser" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "canUploadRecord" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "canViewRecords" BOOLEAN NOT NULL DEFAULT false;
+```
+
+### Quick risks
+- Hardcoded role checks in UI
+```71:75:src/rcm/organization/UsersPage.tsx
+const currentUserMembership = members?.find(m => (m as any).userId === user?.id);
+const canManageUsers = (currentUserMembership?.role === 'owner') || ((currentUserMembership as any)?.manageUserPermission === 'WRITE');
+const canInvite = canManageUsers;
+```
+- Hardcoded owner checks in server ops
+```133:141:src/rcm/organization/operations.ts
+const membership = await context.entities.OrganizationMember.findFirst({
+  where: { 
+    userId: context.user.id,
+    organizationId: args.id,
+    role: 'owner'
+  }
+});
+```
+- Duplicate legacy invite implementation (not CASL-guarded, risk of drift)
+```762:769:src/rcm/eob2era/operations.ts
+export const inviteMember: InviteMember<InviteMemberArgs, OrganizationMember> = async (args, context) => {
+...
+// Check if user is owner or admin
+await checkMemberRole(context.user.id, args.organizationId, ['owner', 'admin'], context);
+```
+
+Shall I generate a PR summary from these files?

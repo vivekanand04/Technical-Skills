@@ -1,0 +1,24 @@
+in  future use:
+Start database: docker start wasp-dev-db-OpenSaaS-6440fbe62a
+Stop database: docker stop wasp-dev-db-OpenSaaS-6440fbe62a
+Check status: docker ps | grep wasp-dev-db
+The database is running
+
+
+...to start again?? 
+  docker run --name wasp-dev-db-OpenSaaS-6440fbe62a \
+  --rm \
+  --publish 5432:5432 \
+  -v wasp-dev-db-OpenSaaS-6440fbe62a:/var/lib/postgresql \
+  --env POSTGRES_PASSWORD=postgresWaspDevPass \
+  --env POSTGRES_USER=postgresWaspDevUser \
+  --env POSTGRES_DB=OpenSaaS-6440fbe62a \
+  postgres
+  
+
+
+
+
+
+
+  ssh-add ~/.ssh/id_ed25519_company_new

@@ -1,0 +1,49 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    multimap<int, string> mp;
+
+    // insert
+    mp.insert({1, "A"});
+    mp.insert({1, "B"});
+    mp.insert({2, "C"});
+
+    // access (all elements)
+    for(auto it = mp.begin(); it != mp.end(); it++){
+        cout << it->first << " " << it->second << endl;
+    }
+
+    cout << endl;
+
+    // access all values of a key
+    auto range = mp.equal_range(1);
+    for(auto it = range.first; it != range.second; it++){
+        cout << it->second << " ";
+    }
+
+    cout << endl;
+
+    // find (first occurrence)
+    auto it = mp.find(1);
+    if(it != mp.end()){
+        cout << "First value of key 1: " << it->second << endl;
+    }
+
+    // erase by iterator (single element)
+    it = mp.find(2);
+    if(it != mp.end()){
+        mp.erase(it);
+    }
+
+    // erase all elements with key = 1
+    mp.erase(1);
+
+    // final map
+    cout << "After deletion:" << endl;
+    for(auto it = mp.begin(); it != mp.end(); it++){
+        cout << it->first << " " << it->second << endl;
+    }
+
+    return 0;
+}

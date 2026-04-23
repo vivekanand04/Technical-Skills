@@ -1,0 +1,283 @@
+### RBAC Frontend↔Backend Contract — Step-by-Step Q&A
+
+Below are the exact questions HR and other teams ask most, with clear, step‑by‑step answers based on the current code.
+
+### 1) How does the backend decide if a user can read/write data?
+- The server looks up the user’s `OrganizationMember` row for the active organization, then builds a CASL ability from role + fine-grained permissions.
+- Owner role gets full manage rights within the org; others are controlled by four fields:
+  - recordPermission: read/write EOB records
+  - uploadRecordPermission: create/upload EOB records
+  - manageUserPermission: read/write org members
+  - organizationDetailsPermission: read/write org profile/settings
+
+Code references:
+```10:14:schema.prisma
+enum PermissionLevel {
+  NONE
+  READ
+  WRITE
+}
+```
+```145:166:schema.prisma
+model OrganizationMember {
+  id                        String          @id @default(uuid())
+  role                      String          // 'owner', 'admin', 'member', 'viewer'
+  
+  // Fine-grained permissions (RBAC)
+  recordPermission          PermissionLevel @default(NONE)
+  uploadRecordPermission    PermissionLevel @default(NONE)
+  manageUserPermission      PermissionLevel @default(NONE)
+  organizationDetailsPermission PermissionLevel @default(NONE)
+  // ...
+}
+```
+```28:62:src/rcm/auth/ability.ts
+// Owners: implicit full manage
+if (membership.role === 'owner') {
+  can('manage', 'Eob2EraRecord', { organizationId })
+  can('manage', 'OrganizationMember', { organizationId })
+  can('update', 'Organization', { id: organizationId })
+  can('read', 'Organization', { id: organizationId })
+}
+// Fine-grained
+if (membership.recordPermission === PermissionLevel.READ || membership.recordPermission === PermissionLevel.WRITE) {
+  can('read', 'Eob2EraRecord', { organizationId })
+}
+if (membership.recordPermission === PermissionLevel.WRITE) {
+  can('update', 'Eob2EraRecord', { organizationId })
+  can('delete', 'Eob2EraRecord', { organizationId })
+}
+if (membership.uploadRecordPermission === PermissionLevel.WRITE) {
+  can('create', 'Eob2EraRecord', { organizationId })
+}
+if (membership.manageUserPermission === PermissionLevel.READ || membership.manageUserPermission === PermissionLevel.WRITE) {
+  can('read', 'OrganizationMember', { organizationId })
+}
+if (membership.manageUserPermission === PermissionLevel.WRITE) {
+  can('create', 'OrganizationMember', { organizationId })
+  can('update', 'OrganizationMember', { organizationId })
+  can('delete', 'OrganizationMember', { organizationId })
+}
+if (membership.organizationDetailsPermission === PermissionLevel.READ || membership.organizationDetailsPermission === PermissionLevel.WRITE) {
+  can('read', 'Organization', { id: organizationId })
+}
+if (membership.organizationDetailsPermission === PermissionLevel.WRITE) {
+  can('update', 'Organization', { id: organizationId })
+}
+```
+
+### 2) To list EOB/ERA records, what must the frontend send?
+- Send filter/sort/pagination only. The server resolves the user’s organization and applies CASL DB filters automatically.
+- Current behavior: org is inferred from the user’s first membership.
+
+Send:
+```json
+{
+  "status": "uploaded",
+  "payer": "Aetna",
+  "facility": "Clinic A",
+  "searchTerm": "invoice-123",
+  "startDate": "2025-01-01",
+  "endDate": "2025-12-31",
+  "sortBy": "createdAt",
+  "sortOrder": "desc",
+  "page": 1,
+  "pageSize": 20
+}
+```
+Code references:
+```86:101:src/rcm/eob2era/operations.ts
+const organization = await getUserOrganization(context.user.id, context);
+// Ability check
+const ability = await buildAbilityFor(context.user.id, organization.id, context)
+if (!ability.can('read', 'Eob2EraRecord')) throw new HttpError(403, ...)
+// DB filter from CASL
+const where = { organizationId: organization.id, ...accessibleBy(ability).Eob2EraRecord }
+```
+
+### 3) To upload a new EOB file, what must the frontend send?
+- Send file metadata and received date. The server checks `create` permission and returns a presigned upload URL and the created record.
+
+Send:
+```json
+{
+  "fileName": "EOB-12345.pdf",
+  "fileType": "application/pdf",
+  "fileSize": 524288,
+  "payer": "Aetna",
+  "facility": "Clinic A",
+  "received": "2025-10-24T12:30:00Z",
+  "priority": "normal"
+}
+```
+Code reference:
+```324:331:src/rcm/eob2era/operations.ts
+const organization = await getUserOrganization(context.user.id, context);
+const ability = await buildAbilityFor(context.user.id, organization.id, context)
+if (!ability.can('create', 'Eob2EraRecord')) throw new HttpError(403, ...)
+```
+
+### 4) To trigger processing of an EOB, what must the frontend send?
+- Send the record ID and optional priority. Requires ability to update or create records.
+
+Send:
+```json
+{
+  "recordId": "eob-record-uuid",
+  "priority": "high"
+}
+```
+Code reference:
+```380:384:src/rcm/eob2era/operations.ts
+const ability = await buildAbilityFor(context.user.id, organization.id, context)
+if (!(ability.can('update', 'Eob2EraRecord') || ability.can('create', 'Eob2EraRecord'))) throw new HttpError(403, ...)
+```
+
+### 5) To update or delete an EOB record, what must the frontend send?
+- Update: record ID plus fields to change.
+- Delete: record ID. Requires appropriate membership/role checks.
+
+Update send:
+```json
+{
+  "id": "eob-record-uuid",
+  "status": "PASSED",
+  "note": "Validated by QA",
+  "era": "ERA-9988",
+  "eraUrl": "s3://bucket/eras/ERA-9988.pdf"
+}
+```
+Delete send:
+```json
+{ "id": "eob-record-uuid" }
+```
+
+### 6) To view or download an EOB/ERA file (signed URL), what must the frontend send?
+- You can use either the operation or the HTTP API. Both require the record’s id and the S3 URL.
+- action is optional: view (inline) or download (attachment).
+
+Send:
+```json
+{
+  "s3Url": "s3://bucket/path/to/file.pdf",
+  "recordId": "eob-record-uuid",
+  "action": "download"
+}
+```
+Code references:
+```249:257:src/rcm/eob2era/operations.ts
+export const getEobFileSignedUrl = async (args, context) => {
+  // ...
+  const record = await context.entities.Eob2EraRecord.findUnique({ where: { id: recordId }, include: { organization: true } });
+  // ...
+}
+```
+```16:27:src/rcm/server/api.ts
+const { url, action, recordId } = req.query;
+if (!url || typeof url !== 'string') throw new HttpError(400, ...)
+if (!recordId || typeof recordId !== 'string') throw new HttpError(400, 'Record ID is required')
+```
+
+### 7) To invite a user to an organization, what must the frontend send?
+- Requires `manageUserPermission = WRITE` or owner role (enforced via CASL).
+- Provide the organizationId, the user’s email, a role, and a fine‑grained permissions object.
+
+Send:
+```json
+{
+  "organizationId": "org-uuid",
+  "email": "teammate@company.com",
+  "role": "member",
+  "permissions": {
+    "record": "READ",
+    "uploadRecord": "WRITE",
+    "manageUser": "NONE",
+    "organizationDetails": "READ"
+  }
+}
+```
+UI shape:
+```49:53:src/rcm/organization/UsersPage.tsx
+const [invitePerms, setInvitePerms] = useState<{ record: 'NONE' | 'READ' | 'WRITE'; uploadRecord: 'NONE' | 'READ' | 'WRITE'; manageUser: 'NONE' | 'READ' | 'WRITE'; organizationDetails: 'NONE' | 'READ' | 'WRITE' }>({ record: 'NONE', uploadRecord: 'NONE', manageUser: 'NONE', organizationDetails: 'NONE' });
+```
+Server:
+```165:173:src/rcm/organization/operations.ts
+const ability = await buildAbilityFor(context.user.id, args.organizationId, context)
+if (!ability.can('create', 'OrganizationMember')) throw new HttpError(403, 'Insufficient permissions')
+// ...
+```
+
+### 8) To change a member’s role or remove a member, what must the frontend send?
+- Change role: membership id and new role.
+- Remove: membership id.
+- Owner roles are protected (cannot demote or remove the sole owner).
+
+Change role:
+```json
+{ "id": "membership-uuid", "role": "admin" }
+```
+Remove member:
+```json
+{ "id": "membership-uuid" }
+```
+Server:
+```220:234:src/rcm/organization/operations.ts
+if (!ability.can('update', 'OrganizationMember')) throw new HttpError(403, ...)
+// Prevent changing owner role
+```
+```252:265:src/rcm/organization/operations.ts
+if (!ability.can('delete', 'OrganizationMember')) throw new HttpError(403, ...)
+// Prevent removing owner
+```
+
+### 9) To read or update organization settings, what must the frontend send?
+- Read: `getOrganizationById` with org id. Requires owner OR `organizationDetailsPermission != NONE`.
+- Update: org id + fields to change. Requires owner OR `organizationDetailsPermission = WRITE`.
+
+Read:
+```json
+{ "id": "org-uuid" }
+```
+Update:
+```json
+{
+  "id": "org-uuid",
+  "name": "New Org Name",
+  "slug": "optional-new-slug"
+}
+```
+Settings update:
+```json
+{
+  "id": "org-uuid",
+  "awsRegion": "us-east-1",
+  "s3BucketName": "my-bucket",
+  "sqsInputQueueUrl": "https://sqs...",
+  "sqsOutputQueueUrl": "https://sqs..."
+}
+```
+Server:
+```108:117:src/rcm/organization/operations.ts
+// Update org requires owner or organizationDetailsPermission WRITE
+if (!membership || (membership.role !== 'owner' && membership.organizationDetailsPermission !== PermissionLevel.WRITE)) {
+  throw new HttpError(403, 'Insufficient permissions');
+}
+```
+
+### 10) How can the frontend know what UI to show/disable?
+- Fetch members for the current org and find the current user’s `OrganizationMember` row. Use `role` and fine‑grained fields to gate UI (e.g., show Invite button only if owner or `manageUserPermission = WRITE`).
+
+UI example:
+```71:74:src/rcm/organization/UsersPage.tsx
+const currentUserMembership = members?.find(m => (m as any).userId === user?.id);
+const canManageUsers = (currentUserMembership?.role === 'owner') || ((currentUserMembership as any)?.manageUserPermission === 'WRITE');
+```
+
+### 11) How does this pattern extend to medical coding or payments?
+- Add fine‑grained fields for the new domain (e.g., `codingPermission`, `claimsPermission`) on `OrganizationMember`.
+- Map them to CASL actions in the ability builder.
+- Require those actions in the relevant operations and filter with `accessibleBy(ability)`.
+- Frontend continues to send: target resource identifiers, minimal update/create payloads, and (for invites) the exact domain permissions to assign.
+
+Notes
+- Current behavior for EOB list: server infers the organization from the user’s first membership. If multiple orgs are needed, we can add an explicit `organizationId` argument in requests.

@@ -1,0 +1,210 @@
+I'll search the repository to find exactly what authentication mechanism Wasp is using and clarify the differences.
+
+[13 tools called]
+
+Now I can provide you with a comprehensive answer based on the actual code in your repository!
+
+## **CLARIFICATION: Difference Between Point 4 and Point 5**
+
+In the workflow I provided:
+
+- **Point 4**: "Intercepts HTTP request" - Wasp middleware intercepts the incoming HTTP request
+- **Point 5**: "Validates JWT token from cookie" - This was **INCORRECT based on your actual implementation**
+
+Let me correct this based on the actual code:
+
+---
+
+## **What Wasp Actually Uses: Session Tokens (NOT JWT)**
+
+Based on the generated Wasp code in your repository, **Wasp uses SESSION-BASED authentication** with the **Lucia** library, not JWT tokens for user authentication.
+
+### Evidence from Your Repository:
+
+**1. Lucia Session Management** (`.wasp/out/sdk/wasp/auth/lucia.ts`):
+
+```11:22:.wasp/out/sdk/wasp/auth/lucia.ts
+// PRIVATE API
+/**
+ * We are using Lucia for session management.
+ * 
+ * Some details:
+ * 1. We are using the Prisma adapter for Lucia.
+ * 2. We are not using cookies for session management. Instead, we are using
+ *    the Authorization header to send the session token.
+ * 3. Our `Session` entity is connected to the `Auth` entity.
+ * 4. We are exposing the `userId` field from the `Auth` entity to
+ *    make fetching the User easier.
+ */
+```
+
+**2. Session Storage in Database** (`.wasp/out/db/schema.prisma`):
+
+```prisma
+model Session {
+  id        String   @id @unique
+  expiresAt DateTime
+  userId    String
+  auth      Auth     @relation(references: [id], fields: [userId], onDelete: Cascade)
+
+  @@index([userId])
+}
+```
+
+**3. Bearer Token Authentication** (`.wasp/out/sdk/wasp/auth/session.ts`):
+
+```25:38:.wasp/out/sdk/wasp/auth/session.ts
+export async function getSessionAndUserFromBearerToken(req: ExpressRequest): Promise<SessionAndUser | null> {
+  const authorizationHeader = req.headers["authorization"];
+
+  if (typeof authorizationHeader !== "string") {
+    return null;
+  }
+
+  const sessionId = auth.readBearerToken(authorizationHeader);
+  if (!sessionId) {
+    return null;
+  }
+
+  return getSessionAndUserFromSessionId(sessionId);
+}
+```
+
+---
+
+## **How It Actually Works:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CORRECTED WORKFLOW                            │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: User logs in
+  ↓
+Step 2: Wasp creates a SESSION in the database
+  - Creates row in Session table with sessionId
+  - Session linked to Auth table, which links to User
+  ↓
+Step 3: Session ID sent to client
+  - Session ID sent in Authorization header as Bearer token
+  - Example: Authorization: Bearer <sessionId>
+  ↓
+Step 4: Client stores session ID
+  - Stored in browser (localStorage or memory)
+  - Automatically sent with every request via Authorization header
+  ↓
+Step 5: Backend validates session
+  - Extracts sessionId from Authorization: Bearer <sessionId>
+  - Queries Session table in database
+  - Validates session hasn't expired
+  - Fetches associated user data
+  ↓
+Step 6: User available in context.user
+```
+
+---
+
+## **Session Token vs JWT Token Comparison**
+
+| Feature | **Session Tokens (Your App)** | **JWT Tokens** |
+|---------|-------------------------------|----------------|
+| **Storage Location** | Server-side in database (PostgreSQL Session table) | Client-side only (localStorage/cookies) |
+| **Validation** | Requires database lookup on every request | Self-contained, validated cryptographically |
+| **State** | Stateful (server maintains session) | Stateless (no server storage) |
+| **Revocation** | Easy - delete from database | Difficult - token valid until expiration |
+| **Size** | Small session ID (~32 chars) | Larger (hundreds of bytes with claims) |
+| **Scalability** | Requires session store access | More scalable (no DB lookups) |
+| **Security** | More secure - can be immediately invalidated | Vulnerable if stolen before expiration |
+| **Expiration** | Stored in database, can be refreshed | Fixed at creation time |
+| **Bearer Token Format** | `Authorization: Bearer <sessionId>` | `Authorization: Bearer <jwt>` |
+
+---
+
+## **What About JWT in Your Codebase?**
+
+**Yes, JWT functionality exists** (`.wasp/out/sdk/wasp/auth/jwt.ts`), but it's used for **different purposes**, not primary authentication:
+
+```1:19:.wasp/out/sdk/wasp/auth/jwt.ts
+import * as jwt from 'oslo/jwt'
+import { config } from 'wasp/server'
+
+const JWT_SECRET = new TextEncoder().encode(config.auth.jwtSecret)
+const JWT_ALGORITHM = 'HS256'
+
+// PRIVATE API
+export function createJWT(
+  data: Parameters<typeof jwt.createJWT>[2],
+  options: Parameters<typeof jwt.createJWT>[3],
+): Promise<string> {
+  return jwt.createJWT(JWT_ALGORITHM, JWT_SECRET, data, options)
+}
+
+// PRIVATE API
+export async function validateJWT<Payload>(token: string): Promise<Payload> {
+  const { payload } = await jwt.validateJWT(JWT_ALGORITHM, JWT_SECRET, token)
+  return payload as Payload
+}
+```
+
+JWT is likely used for:
+- Email verification tokens
+- Password reset tokens
+- Short-lived API tokens
+- **NOT for primary user authentication sessions**
+
+---
+
+## **CORRECTED Authentication Flow in Your App**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    STEP 1: LOGIN                                 │
+│  User enters email/password → Wasp validates credentials        │
+│  → Creates Session in DB → Returns sessionId to client          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            STEP 2: CLIENT STORES SESSION ID                      │
+│  Client stores sessionId (likely in memory or localStorage)     │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            STEP 3: SUBSEQUENT REQUESTS                           │
+│  Every request includes:                                         │
+│  Authorization: Bearer <sessionId>                               │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            STEP 4: WASP MIDDLEWARE VALIDATES                     │
+│  1. Extracts sessionId from Authorization header                │
+│  2. Queries Session table: SELECT * FROM Session WHERE id=?     │
+│  3. Checks if session expired (expiresAt > now())               │
+│  4. Fetches associated Auth and User data                       │
+│  5. Provides context.user to operation                          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            STEP 5: YOUR OPERATION EXECUTES                       │
+│  Operation has access to context.user with full user data       │
+│  RBAC checks performed using context.user.id                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## **Summary**
+
+1. **Wasp uses SESSION TOKENS**, not JWT tokens for authentication
+2. **Session ID is sent via Bearer token** in the Authorization header
+3. **Sessions are stored in the database** and validated on every request
+4. **JWT functionality exists** but is used for other purposes (email verification, password reset)
+5. **Your RBAC implementation** works with session-based authentication perfectly
+
+This session-based approach is actually **better for your RBAC use case** because:
+- Sessions can be immediately revoked (important for security)
+- You can invalidate all sessions when user permissions change
+- More secure than JWT for long-lived authentication

@@ -1,0 +1,151 @@
+1)git reset --hard <commit-hash>
+2) git log
+
+3)git clean -fd --->  Remove all untracked files (including directories)
+4)STEP BY STEP GUIDE TO CLEAN GIT HISTORY (REMOVE .env, node_modules, .env.server)
+
+Follow these steps exactly. Run all commands from the root of your project.
+
+--------------------------------------------------
+
+STEP 1 — INSTALL git-filter-repo (only once)
+
+pip install git-filter-repo
+
+Verify installation
+
+git filter-repo --help
+
+--------------------------------------------------
+
+STEP 2 — CLONE A FRESH COPY OF THE REPOSITORY
+
+Go to the directory where you want the cleaned repo.
+
+cd C:\Users\Lenovo\Desktop\SARAL
+
+Clone the repo
+
+git clone https://github.com/YOUR_USERNAME/Inventory-Replenishment-System.git clean-repo
+
+Move into the cloned repo
+
+cd clean-repo
+
+--------------------------------------------------
+
+STEP 3 — REMOVE SENSITIVE FILES FROM ENTIRE GIT HISTORY
+
+Run this command in ONE LINE
+
+git filter-repo --path packages/backend/.env --path packages/backend/node_modules --path .env.server --invert-paths
+
+This will remove these files/folders from ALL commits in the repository history.
+
+--------------------------------------------------
+
+STEP 4 — ADD THE REMOTE REPOSITORY AGAIN
+
+git-filter-repo removes remotes for safety.
+
+Add it again:
+
+git remote add origin https://github.com/YOUR_USERNAME/Inventory-Replenishment-System.git
+
+Verify
+
+git remote -v
+
+--------------------------------------------------
+
+STEP 5 — FORCE PUSH THE CLEANED HISTORY
+
+Push the rewritten history to GitHub
+
+git push origin --force --all
+
+Push tags if any
+
+git push origin --force --tags
+
+Now the GitHub repository history is replaced with the cleaned version.
+
+--------------------------------------------------
+
+STEP 6 — PREVENT THESE FILES FROM BEING PUSHED AGAIN
+
+Create or edit .gitignore
+
+Add the following lines
+
+.env
+.env.server
+node_modules/
+packages/backend/node_modules/
+
+--------------------------------------------------
+
+STEP 7 — COMMIT THE .gitignore FILE
+
+git add .gitignore
+
+git commit -m "ignore env files and node_modules"
+
+git push
+
+--------------------------------------------------
+
+STEP 8 — VERIFY THAT FILES ARE REMOVED FROM HISTORY
+
+Run these commands
+
+git log --all -- packages/backend/.env
+
+git log --all -- packages/backend/node_modules
+
+git log --all -- .env.server
+
+If nothing appears, the history is clean.
+
+--------------------------------------------------
+
+STEP 9 — DELETE THE OLD REPOSITORY FOLDER
+
+Delete the old project folder to avoid confusion.
+
+Use ONLY the cleaned repo for future work.
+
+Example:
+
+KEEP
+Desktop/SARAL/clean-repo
+
+DELETE
+Desktop/SARAL/Inventory-Replenishment-System
+
+--------------------------------------------------
+
+STEP 10 — IMPORTANT SECURITY STEP
+
+Since .env was pushed earlier, rotate all secrets immediately.
+
+Change:
+• database passwords
+• API keys
+• tokens
+• service credentials
+
+Never reuse the old secrets.
+
+--------------------------------------------------
+
+FINAL RESULT
+
+Your repository will now:
+• have no .env in history
+• have no node_modules in history
+• be safe to share with recruiters
+• remain clean due to .gitignore
+
+
+5.)
