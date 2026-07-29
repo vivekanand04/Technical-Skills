@@ -1,0 +1,5 @@
+1. URL got from Atlas-> mongodb+srv://vivnd68234:<db_password>@youtube-cluster.modkbsz.mongodb.net/?appName=youtube-cluster
+   Refined URL that would run here: mongodb+srv://vivnd68234-7:mypassword123@youtube-cluster.modkbsz.mongodb.net/youtubeDB?retryWrites=true&w=majority&appName=youtube-cluster
+      what we have added: db name, retryWrites=true&w=majority
+
+2.

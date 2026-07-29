@@ -1,0 +1,715 @@
+========================================
+1. GWT ARCHITECTURE
+========================================
+
+What is GWT?
+------------
+GWT (Google Web Toolkit) is a framework that allows developers to write
+frontend applications in Java. The GWT compiler converts Java code into
+optimized JavaScript that runs inside the browser.
+
+Main Goal:
+Write frontend code in Java instead of JavaScript.
+
+Flow:
+Java Code
+    ↓
+GWT Compiler
+    ↓
+Optimized JavaScript
+    ↓
+Browser
+
+Advantages:
+-----------
+1. Write frontend using Java.
+2. Strong type checking.
+3. Reuse Java skills.
+4. Browser compatibility handled by GWT.
+5. Optimized JavaScript generation.
+
+----------------------------------------
+How Java Code is Converted into JavaScript
+----------------------------------------
+
+Step 1:
+Developer writes frontend code in Java.
+
+Step 2:
+GWT Compiler scans Java source files.
+
+Step 3:
+Compiler converts Java classes into JavaScript.
+
+Step 4:
+Generated JavaScript is loaded into browser.
+
+Example:
+
+Java Code:
+
+Button btn = new Button("Click Me");
+
+Generated JavaScript (simplified):
+
+var btn = document.createElement("button");
+btn.innerHTML = "Click Me";
+
+----------------------------------------
+Client Side vs Server Side
+----------------------------------------
+
+Client Side:
+------------
+Runs in Browser.
+
+Examples:
+- UI
+- Buttons
+- Textboxes
+- Validation
+- Event Handling
+
+Packages:
+com.google.gwt.user.client.*
+
+Server Side:
+------------
+Runs on Server.
+
+Examples:
+- Database operations
+- Authentication
+- Business Logic
+
+Packages:
+com.myapp.server.*
+
+----------------------------------------
+Typical GWT Project Structure
+----------------------------------------
+
+src/
+│
+├── client/
+│   ├── MyApp.java
+│   ├── LoginPage.java
+│
+├── server/
+│   ├── LoginServiceImpl.java
+│
+├── shared/
+│   ├── UserDTO.java
+│
+├── MyApp.gwt.xml
+│
+└── war/
+    ├── MyApp.html
+
+client/
+--------
+Contains browser-side code.
+
+server/
+--------
+Contains server-side code.
+
+shared/
+--------
+Contains classes shared between client and server.
+
+war/
+-----
+Contains web resources.
+
+========================================
+2. ENTRY POINT
+========================================
+
+What is EntryPoint?
+-------------------
+
+EntryPoint is the starting point of every GWT application.
+
+Similar to:
+
+public static void main(String[] args)
+
+in normal Java applications.
+
+GWT starts execution from:
+
+onModuleLoad()
+
+----------------------------------------
+EntryPoint Interface
+----------------------------------------
+
+public interface EntryPoint {
+    void onModuleLoad();
+}
+
+Every GWT application must implement EntryPoint.
+
+----------------------------------------
+onModuleLoad()
+----------------------------------------
+
+Called automatically when the web page loads.
+
+Used for:
+- Creating UI
+- Registering events
+- Initializing application
+
+Example:
+
+public class MyApp implements EntryPoint {
+
+    public void onModuleLoad() {
+
+        Label label = new Label("Hello GWT");
+
+        RootPanel.get().add(label);
+    }
+}
+
+----------------------------------------
+How GWT Application Starts
+----------------------------------------
+
+1. Browser loads HTML page.
+
+2. HTML loads generated JavaScript.
+
+3. JavaScript finds EntryPoint class.
+
+4. onModuleLoad() executes.
+
+5. UI appears on screen.
+
+Flow:
+
+HTML Page
+    ↓
+Generated JavaScript
+    ↓
+EntryPoint
+    ↓
+onModuleLoad()
+    ↓
+UI Displayed
+
+========================================
+3. UI COMPONENTS (WIDGETS)
+========================================
+
+Widgets are reusable UI elements.
+
+----------------------------------------
+Label
+----------------------------------------
+
+Displays text.
+
+Label label = new Label("Welcome");
+
+----------------------------------------
+Button
+----------------------------------------
+
+Clickable button.
+
+Button btn = new Button("Submit");
+
+----------------------------------------
+TextBox
+----------------------------------------
+
+User input field.
+
+TextBox txt = new TextBox();
+
+----------------------------------------
+CheckBox
+----------------------------------------
+
+Used for selection.
+
+CheckBox cb = new CheckBox("Remember Me");
+
+----------------------------------------
+ListBox
+----------------------------------------
+
+Dropdown list.
+
+ListBox list = new ListBox();
+
+list.addItem("Java");
+list.addItem("Python");
+list.addItem("JavaScript");
+
+----------------------------------------
+VerticalPanel
+----------------------------------------
+
+Places widgets vertically.
+
+VerticalPanel panel = new VerticalPanel();
+
+panel.add(new Label("Name"));
+panel.add(new TextBox());
+
+Result:
+
+Name
+[______]
+
+----------------------------------------
+HorizontalPanel
+----------------------------------------
+
+Places widgets horizontally.
+
+HorizontalPanel panel = new HorizontalPanel();
+
+panel.add(new Label("Name"));
+panel.add(new TextBox());
+
+Result:
+
+Name [______]
+
+----------------------------------------
+FlexTable
+----------------------------------------
+
+Creates table layout.
+
+FlexTable table = new FlexTable();
+
+table.setText(0,0,"ID");
+table.setText(0,1,"Name");
+
+table.setText(1,0,"101");
+table.setText(1,1,"John");
+
+Result:
+
++------+-------+
+| ID   | Name  |
++------+-------+
+| 101  | John  |
++------+-------+
+
+========================================
+4. EVENT HANDLING
+========================================
+
+Events occur when users interact with UI.
+
+Examples:
+- Button Click
+- Typing
+- Selection Change
+
+----------------------------------------
+ClickHandler
+----------------------------------------
+
+Triggered when button is clicked.
+
+Button btn = new Button("Submit");
+
+btn.addClickHandler(new ClickHandler() {
+
+    public void onClick(ClickEvent event) {
+
+        Window.alert("Button Clicked");
+    }
+});
+
+----------------------------------------
+ChangeHandler
+----------------------------------------
+
+Triggered when value changes.
+
+ListBox list = new ListBox();
+
+list.addChangeHandler(new ChangeHandler() {
+
+    public void onChange(ChangeEvent event) {
+
+        Window.alert("Value Changed");
+    }
+});
+
+----------------------------------------
+KeyUpHandler
+----------------------------------------
+
+Triggered when key is released.
+
+TextBox txt = new TextBox();
+
+txt.addKeyUpHandler(new KeyUpHandler() {
+
+    public void onKeyUp(KeyUpEvent event) {
+
+        Window.alert("Key Released");
+    }
+});
+
+========================================
+5. PANELS AND LAYOUTS
+========================================
+
+Panels are containers that hold widgets.
+
+----------------------------------------
+RootPanel
+----------------------------------------
+
+Main panel attached to webpage.
+
+RootPanel.get().add(new Label("Hello"));
+
+----------------------------------------
+VerticalPanel
+----------------------------------------
+
+Arranges widgets top to bottom.
+
+Widget1
+Widget2
+Widget3
+
+----------------------------------------
+HorizontalPanel
+----------------------------------------
+
+Arranges widgets left to right.
+
+Widget1 Widget2 Widget3
+
+----------------------------------------
+FlowPanel
+----------------------------------------
+
+Behaves like HTML div.
+
+FlowPanel panel = new FlowPanel();
+
+panel.add(new Button("A"));
+panel.add(new Button("B"));
+
+----------------------------------------
+DockLayoutPanel
+----------------------------------------
+
+Complex layout manager.
+
+Regions:
+- North
+- South
+- East
+- West
+- Center
+
+Example:
+
+DockLayoutPanel panel =
+    new DockLayoutPanel(Unit.PX);
+
+panel.addNorth(new Label("Header"), 50);
+
+panel.addSouth(new Label("Footer"), 50);
+
+panel.add(new Label("Content"));
+
+========================================
+6. UIBINDER
+========================================
+
+What is UiBinder?
+-----------------
+
+UiBinder separates UI from Java code.
+
+Similar to:
+
+HTML + Java
+
+instead of
+
+Everything in Java
+
+----------------------------------------
+UiBinder XML Example
+----------------------------------------
+
+MyPage.ui.xml
+
+<ui:UiBinder
+ xmlns:ui='urn:ui:com.google.gwt.uibinder'
+ xmlns:g='urn:import:com.google.gwt.user.client.ui'>
+
+    <g:VerticalPanel>
+
+        <g:Label text="Login"/>
+
+        <g:TextBox ui:field="username"/>
+
+        <g:Button text="Submit"/>
+
+    </g:VerticalPanel>
+
+</ui:UiBinder>
+
+----------------------------------------
+Binding XML with Java
+----------------------------------------
+
+public class MyPage extends Composite {
+
+    interface Binder
+        extends UiBinder<Widget, MyPage> {}
+
+    private static Binder binder =
+        GWT.create(Binder.class);
+
+    @UiField
+    TextBox username;
+
+    public MyPage() {
+
+        initWidget(
+            binder.createAndBindUi(this)
+        );
+    }
+}
+
+Benefits:
+---------
+1. Cleaner UI code.
+2. Easier maintenance.
+3. Separation of concerns.
+
+========================================
+7. RPC COMMUNICATION
+========================================
+
+RPC = Remote Procedure Call
+
+Allows browser-side Java code to call
+server-side Java methods.
+
+Flow:
+
+Client
+   ↓
+RPC Request
+   ↓
+Server
+   ↓
+Response
+   ↓
+Client
+
+----------------------------------------
+Service Interface
+----------------------------------------
+
+public interface GreetingService
+    extends RemoteService {
+
+    String greet(String name);
+}
+
+----------------------------------------
+Async Interface
+----------------------------------------
+
+public interface GreetingServiceAsync {
+
+    void greet(
+        String name,
+        AsyncCallback<String> callback
+    );
+}
+
+----------------------------------------
+Server Implementation
+----------------------------------------
+
+public class GreetingServiceImpl
+        extends RemoteServiceServlet
+        implements GreetingService {
+
+    public String greet(String name) {
+
+        return "Hello " + name;
+    }
+}
+
+----------------------------------------
+Client Call
+----------------------------------------
+
+service.greet(
+    "Vivek",
+
+    new AsyncCallback<String>() {
+
+        public void onSuccess(String result) {
+
+            Window.alert(result);
+        }
+
+        public void onFailure(Throwable caught) {
+
+            Window.alert("Error");
+        }
+    }
+);
+
+========================================
+8. JSINTEROP
+========================================
+
+JSInterop allows communication between
+Java and JavaScript.
+
+----------------------------------------
+Calling JavaScript from Java
+----------------------------------------
+
+@JsType(isNative = true,
+        namespace = JsPackage.GLOBAL)
+
+public class Console {
+
+    public static native void log(
+        String message
+    );
+}
+
+Usage:
+
+Console.log("Hello JS");
+
+Equivalent JavaScript:
+
+console.log("Hello JS");
+
+----------------------------------------
+Calling Java Methods from JavaScript
+----------------------------------------
+
+@JsType
+
+public class User {
+
+    public String getName() {
+
+        return "Vivek";
+    }
+}
+
+JavaScript:
+
+var user = new User();
+
+console.log(user.getName());
+
+========================================
+9. COMPILATION PROCESS
+========================================
+
+Command:
+
+mvn gwt:compile
+
+What happens?
+
+Step 1:
+Read Java source files.
+
+Step 2:
+Analyze dependencies.
+
+Step 3:
+Optimize code.
+
+Step 4:
+Generate JavaScript.
+
+Step 5:
+Place generated files in WAR directory.
+
+Flow:
+
+Java Source
+      ↓
+GWT Compiler
+      ↓
+Optimization
+      ↓
+JavaScript
+      ↓
+Browser
+
+========================================
+10. DEBUGGING
+========================================
+
+----------------------------------------
+Super Dev Mode
+----------------------------------------
+
+Used for debugging GWT applications.
+
+Advantages:
+
+1. Faster development.
+2. Java source mapping.
+3. Browser debugging support.
+
+Start:
+
+mvn gwt:codeserver
+
+Open:
+
+http://localhost:9876
+
+----------------------------------------
+Browser Developer Tools
+----------------------------------------
+
+Useful tabs:
+
+1. Console
+   - Logs
+   - Errors
+
+2. Network
+   - API requests
+   - Response time
+
+3. Elements
+   - HTML inspection
+
+4. Sources
+   - JavaScript debugging
+
+Common Debugging Process:
+
+1. Open browser.
+2. Press F12.
+3. Check Console.
+4. Set breakpoints.
+5. Analyze Network calls.
+6. Fix issue.

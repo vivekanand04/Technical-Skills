@@ -1,0 +1,11 @@
+4.) Node.js has an event-driven architecture powered by the event loop.
+When an asynchronous operation is initiated, Node.js registers a callback for the event and continues executing other tasks.
+Once the event is triggered (e.g., an I/O operation completes), the event loop picks the corresponding callback and executes it.
+  Non-blocking I/O allows Node.js to perform input/output operations (like reading from or writing to a file, database, or network) without waiting for the operation to complete before moving on to other tasks.
+5.)    Explain the steps how “Control Flow” controls the functions
+ calls?
+ Control the order of execution..=>Later tasks may rely on data from earlier tasks. If the earlier task hasn't completed, the later one fails or behaves unpredictably.
+ 
+Collect data...=>Asynchronous operations might generate data at different times. Control flow mechanisms ensure all data is collected before proceeding.
+ Limit concurrency...=>Running too many asynchronous tasks concurrently can overwhelm system resources, such as memory or network bandwidth.
+ Call the following step in the program....=>After asynchronous operations complete, the program must decide what to do next (e.g., process data, make another API call).

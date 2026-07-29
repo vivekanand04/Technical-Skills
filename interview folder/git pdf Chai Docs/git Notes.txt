@@ -1,0 +1,9 @@
+Feature                         git clone                                           git fetch
+--------------------------------------------------------------------------------------------------------------
+Purpose                         Creates a new local repo from a remote repo         Updates an existing local repo with latest changes from remote
+When used?                      First time you download a project                   After repo already exists locally
+Creates .git folder             Yes                                                 No (already exists)
+Downloads commits               Yes                                                 Yes
+Downloads branches              Yes                                                 Yes
+Downloads tags                  Yes                                                 Yes (default)
+Creates working directory files Yes                                                 No
